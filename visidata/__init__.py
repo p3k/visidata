@@ -1,6 +1,6 @@
 'VisiData: a curses interface for exploring and arranging tabular data'
 
-__version__ = '2.-4dev'
+__version__ = '2.-5dev'
 __version_info__ = 'VisiData v' + __version__
 __author__ = 'Saul Pwanson <vd@saul.pw>'
 __status__ = 'Production/Stable'
@@ -86,6 +86,7 @@ from .main import *
 from .help import *
 from .defermods import *
 import visidata.sort
+import visidata.unfurl
 
 from .loaders.csv import *
 from .loaders.archive import *
@@ -115,6 +116,7 @@ from .loaders.usv import *
 from .loaders.frictionless import *
 from .loaders.imap import *
 
+from .loaders.pdf import *
 from .loaders.pandas_freqtbl import *
 from .loaders.xword import *
 

@@ -8,11 +8,6 @@ openpyxl            # xlsx
 xlrd                # xls
 h5py                # hdf5
 psycopg2-binary     # postgres
-# FIXME: If MySQL / MariaDB is not installed on the target system it is possible the installation
-# of mysqlclient fails with an error (“mysql_config not found“). At least on Ubuntu 18.04 this can
-# be resolved by installing libmysqlclient-dev / libmariadbclient-dev.
-# Source: https://stackoverflow.com/a/7475296
-mysqlclient==1.4.6  # mysql/mariadb
 pyshp               # shapefiles
 mapbox-vector-tile  # mbtiles
 pypng               # png
@@ -25,5 +20,6 @@ dpkt                # pcap
 dnslib              # pcap
 namestand           # graphviz
 datapackage         # frictionless .json
+pdfminer.six        # pdf
 
 -e git+https://github.com/saulpw/pyxlsb.git@master#egg=pyxlsb # xlsb

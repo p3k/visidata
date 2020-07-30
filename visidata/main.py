@@ -2,7 +2,7 @@
 # Usage: $0 [<options>] [<input> ...]
 #        $0 [<options>] --play <cmdlog> [--batch] [-w <waitsecs>] [-o <output>] [field=value ...]
 
-__version__ = '2.-4dev'
+__version__ = '2.-5dev'
 __version_info__ = 'saul.pw/VisiData v' + __version__
 
 from copy import copy
@@ -10,13 +10,16 @@ import os
 import io
 import sys
 import locale
+import warnings
 
 from visidata import vd, option, options, status, run, BaseSheet, AttrDict
 from visidata import Path, openSource, saveSheets, domotd
 import visidata
 
-option('config', '~/.visidatarc', 'config file to exec in Python')
+option('config', '~/.visidatarc', 'config file to exec in Python', sheettype=None)
 option('play', '', '.vd file to replay')
+option('batch', False, 'replay in batch mode (with no interface and all status sent to stdout)')
+option('output', None, 'save the final visible sheet to output at the end of replay')
 option('preplay', '', 'longnames to preplay before replay')
 option('imports', None, 'imports to preload before .visidatarc (command-line only)')
 
@@ -69,11 +72,13 @@ optalias('o', 'output')
 optalias('w', 'replay_wait')
 optalias('d', 'delimiter')
 optalias('c', 'config')
+optalias('r', 'dir_recurse')
 
 
 def main_vd():
     'Open the given sources using the VisiData interface.'
     locale.setlocale(locale.LC_ALL, '')
+    warnings.showwarning = vd.warning
 
     flPipedInput = not sys.stdin.isatty()
     flPipedOutput = not sys.stdout.isatty()
@@ -91,6 +96,8 @@ def main_vd():
 
     i=1
     current_args = {}
+    global_args = {}
+    flGlobal = False
 
     while i < len(sys.argv):
         arg = sys.argv[i]
@@ -103,6 +110,8 @@ def main_vd():
             import curses
             curses.wrapper(lambda scr: vd.openManPage())
             return 0
+        elif arg in ['-g', '--global']:
+            flGlobal = not flGlobal  # can toggle within the same command
         elif arg[0] == '-':
             optname = arg.lstrip('-')
             optname = optname.replace('-', '_')
@@ -121,11 +130,15 @@ def main_vd():
                     if type(opt.value) is bool:
                         optval = True
                     else:
+                        if i >= len(sys.argv):
+                            vd.error(f'"-{optname}" missing argument')
+
                         optval = sys.argv[i+1]
                         i += 1
 
             current_args[optname] = optval
-            vd.status(str(current_args))
+            if flGlobal:
+                global_args[optname] = optval
 
         elif arg.startswith('+'):  # position cursor at start
             if ':' in arg:
@@ -156,8 +169,15 @@ def main_vd():
 
     args = AttrDict(current_args)
 
-    for k, v in current_args.items():
+    vd.loadConfigAndPlugins(args)
+
+    for k, v in global_args.items():
         options.set(k, v, obj='override')
+
+    for k, v in current_args.items():
+        opt = options._get(k)
+        if opt and opt.sheettype is None:
+            options.set(k, v, obj='override')
 
     # fetch motd and plugins *after* options parsing/setting
     visidata.PluginsSheet().reload()
@@ -169,7 +189,7 @@ def main_vd():
         vd.editline = lambda *args, **kwargs: ''
         vd.execAsync = lambda func, *args, **kwargs: func(*args, **kwargs) # disable async
 
-    for cmd in args.preplay or []:
+    for cmd in (args.preplay or '').split():
         BaseSheet('').execCommand(cmd)
 
     if not args.play:
@@ -178,7 +198,15 @@ def main_vd():
 
     sources = []
     for p, opts in inputs:
+        # filetype is a special option, bc it is needed to construct the specific sheet type
+        if ('filetype' in current_args) and ('filetype' not in opts):
+            opts['filetype'] = current_args['filetype']
+
         vs = openSource(p, **opts)
+        for k, v in current_args.items():  # apply final set of args to sheets specifically if not already set #573
+            if not vs.options.is_set(k):
+                vs.options[k] = v
+
         vd.cmdlog.openHook(vs, vs.source)
         sources.append(vs)
 
@@ -261,7 +289,7 @@ def vd_cli():
     try:
         rc = main_vd()
     except visidata.ExpectedException as e:
-        print('fail: ' + str(e))
+        print('Error: ' + str(e))
     except FileNotFoundError as e:
         print(e)
         if options.debug:

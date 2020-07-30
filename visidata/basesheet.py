@@ -46,8 +46,12 @@ class BaseSheet(Extensible):
     defer = False        # False for not deferring changes until save
 
     @visidata.classproperty
-    def options(cls):
+    def class_options(cls):
         return vd.OptionsObject(vd._options, obj=cls)
+
+    @property
+    def options(self):
+        return vd.OptionsObject(vd._options, obj=self)
 
     def __init__(self, name='', **kwargs):
         self._name = None
@@ -218,7 +222,7 @@ def getSheet(vd, sheetname):
     try:
         sheetidx = int(sheetname)
         return vd.sheets[sheetidx]
-    except TypeError:
+    except ValueError:
         pass
 
     if sheetname == 'options':

@@ -3,22 +3,22 @@ import threading
 from visidata import *
 import visidata
 
-option('replay_wait', 0.0, 'time to wait between replayed commands, in seconds')
+option('replay_wait', 0.0, 'time to wait between replayed commands, in seconds', sheettype=None)
 theme('disp_replay_play', '▶', 'status indicator for active replay')
 theme('disp_replay_pause', '‖', 'status indicator for paused replay')
 theme('color_status_replay', 'green', 'color of replay status indicator')
-option('replay_movement', False, 'insert movements during replay')
-option('visidata_dir', '~/.visidata/', 'directory to load and store additional files')
+option('replay_movement', False, 'insert movements during replay', sheettype=None)
+option('visidata_dir', '~/.visidata/', 'directory to load and store additional files', sheettype=None)
 
 # prefixes which should not be logged
 nonLogged = '''forget exec-longname undo redo quit
 show error errors statuses options threads jump
 replay cancel save-cmdlog
 go- search scroll prev next page start end zoom resize visibility
-suspend redraw no-op help syscopy syspaste sysopen profile toggle'''.split()
+mouse suspend redraw no-op help syscopy syspaste sysopen profile toggle'''.split()
 
-option('rowkey_prefix', 'キ', 'string prefix for rowkey in the cmdlog')
-option('cmdlog_histfile', '', 'file to autorecord each cmdlog action to')
+option('rowkey_prefix', 'キ', 'string prefix for rowkey in the cmdlog', sheettype=None)
+option('cmdlog_histfile', '', 'file to autorecord each cmdlog action to', sheettype=None)
 
 vd.activeCommand = None
 
@@ -142,7 +142,7 @@ class _CommandLog:
             self.afterExecSheet(sheet, False, '')
 
         colname, rowname, sheetname = '', '', None
-        if sheet and not cmd.longname.startswith('open-'):
+        if sheet and not (cmd.longname.startswith('open-') and cmd.longname != 'open-row'):
             sheetname = sheet
 
             contains = lambda s, *substrs: any((a in s) for a in substrs)
@@ -152,6 +152,18 @@ class _CommandLog:
 
             if contains(cmd.execstr, 'cursorTypedValue', 'cursorDisplay', 'cursorValue', 'cursorCell', 'cursorCol', 'cursorVisibleCol'):
                 colname = sheet.cursorCol.name or sheet.visibleCols.index(sheet.cursorCol)
+
+            if contains(cmd.execstr, 'plotterCursorBox'):
+                assert not colname and not rowname
+                bb = sheet.cursorBox
+                colname = '%s %s' % (sheet.formatX(bb.xmin), sheet.formatX(bb.xmax))
+                rowname = '%s %s' % (sheet.formatY(bb.ymin), sheet.formatY(bb.ymax))
+            elif contains(cmd.execstr, 'plotterVisibleBox'):
+                assert not colname and not rowname
+                bb = sheet.visibleBox
+                colname = '%s %s' % (sheet.formatX(bb.xmin), sheet.formatX(bb.xmax))
+                rowname = '%s %s' % (sheet.formatY(bb.ymin), sheet.formatY(bb.ymax))
+
 
         comment = vd.currentReplayRow.comment if vd.currentReplayRow else cmd.helpstr
         vd.activeCommand = self.newRow(sheet=sheetname,
@@ -234,20 +246,13 @@ def replay_cancel(vd):
 
 
 @VisiData.api
-def moveToReplayContext(vd, r):
+def moveToReplayContext(vd, r, vs):
         'set the sheet/row/col to the values in the replay row.  return sheet'
-        if r.sheet:
-            vs = vd.getSheet(r.sheet) or error('no sheet named %s' % r.sheet)
-        else:
-            return None
-
         if r.row:
             vs.moveToRow(r.row) or error('no "%s" row' % r.row)
 
         if r.col:
             vs.moveToCol(r.col) or error('no "%s" column' % r.col)
-
-        return vs
 
 
 @VisiData.api
@@ -261,17 +266,25 @@ def delay(vd, factor=1):
 def replayOne(vd, r):
         'Replay the command in one given row.'
         vd.currentReplayRow = r
+        if r.sheet:
+            vs = vd.getSheet(r.sheet) or error('no sheet named %s' % r.sheet)
+        else:
+            vs = None
 
         longname = getattr(r, 'longname', None)
         if longname == 'set-option':
             try:
-                options.set(r.row, r.input, options._opts.getobj(r.col))
+                if r.col:
+                    options.set(r.row, r.input, r.col)
+                else:
+                    options[r.row] = r.input
+
                 escaped = False
             except Exception as e:
                 vd.exceptionCaught(e)
                 escaped = True
         else:
-            vs = vd.moveToReplayContext(r)
+            vd.moveToReplayContext(r, vs)
             if vs:
                 vd.push(vs)
             else:
@@ -423,5 +436,5 @@ CommandLogJsonl.addCommand('^C', 'replay-stop', 'sheet.cursorRowIndex = sheet.nR
 BaseSheet.addCommand('', 'repeat-last', 'execCommand(cmdlog_sheet.rows[-1].longname)', 'run most recent command with an empty, queried input')
 BaseSheet.addCommand('', 'repeat-input', 'r = copy(cmdlog_sheet.rows[-1]); r.sheet=r.row=r.col=""; vd.replayOne(r)', 'run previous command, along with any previous input to that command')
 
-CommandLog.options.json_sort_keys = False
-CommandLogJsonl.options.json_sort_keys = False
+CommandLog.class_options.json_sort_keys = False
+CommandLogJsonl.class_options.json_sort_keys = False

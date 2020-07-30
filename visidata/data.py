@@ -7,6 +7,7 @@ from visidata import Sheet, Column, asyncthread, Progress, status, error
 from visidata import *
 
 option('filetype', '', 'specify file type', replay=True)
+option('incr_base', 1.0, 'start value for column increments', replay=True)
 
 
 def _default_colnames():
@@ -19,8 +20,9 @@ def _default_colnames():
 
 vd.default_colnames = _default_colnames()
 
-def frange(n, step):
-    yield from (x*step for x in range(n))
+def numrange(n, step=1):
+    base = type(step)(options.incr_base)
+    yield from (base+x*step for x in range(n))
 
 def num(s):
     try:
@@ -160,6 +162,9 @@ def openPath(vd, p, filetype=None):
 
 @VisiData.global_api
 def openSource(vd, p, filetype=None, **kwargs):
+    if not filetype:
+        filetype = options.filetype
+
     vs = None
     if isinstance(p, str):
         if '://' in p:
@@ -233,8 +238,8 @@ def deleteBy(self, func, commit=False):
     return ndeleted
 
 
-IndexSheet.options.header = 0
-IndexSheet.options.skip = 0
+IndexSheet.class_options.header = 0
+IndexSheet.class_options.skip = 0
 
 Sheet.addCommand(None, 'random-rows', 'nrows=int(input("random number to select: ", value=nRows)); vs=copy(sheet); vs.name=name+"_sample"; vs.rows=random.sample(rows, nrows or nRows); vd.push(vs)', 'open duplicate sheet with a random population subset of N rows')
 
@@ -268,9 +273,9 @@ Sheet.addCommand(None, 'show-expr', 'status(evalexpr(inputExpr("show expr="), cu
 
 Sheet.addCommand('gz=', 'setcol-iter', 'cursorCol.setValues(selectedRows, *list(itertools.islice(eval(input("set column= ", "expr", completer=CompleteExpr())), len(selectedRows))))', 'set current column for selected rows to the items in result of Python sequence expression')
 
-Sheet.addCommand('i', 'addcol-range', 'c=SettableColumn(type=int); addColumn(c, cursorColIndex+1); c.setValues(rows, *range(nRows))', 'add column with incremental values')
-Sheet.addCommand('gi', 'setcol-range', 'cursorCol.setValues(selectedRows, *range(sheet.nSelected))', 'set current column for selected rows to incremental values')
-Sheet.addCommand('zi', 'addcol-range-step', 'n=num(input("interval step: ")); c=SettableColumn(type=type(n)); addColumn(c, cursorColIndex+1); c.setValues(rows, *frange(nRows, n))', 'add column with incremental values times given step')
-Sheet.addCommand('gzi', 'setcol-range-step', 'n=num(input("interval step: ")); cursorCol.setValues(selectedRows, *frange(nSelected, n))', 'set current column for selected rows to incremental values times given step')
+Sheet.addCommand('i', 'addcol-incr', 'c=SettableColumn(type=int); addColumn(c, cursorColIndex+1); c.setValues(rows, *numrange(nRows))', 'add column with incremental values')
+Sheet.addCommand('gi', 'setcol-incr', 'cursorCol.setValues(selectedRows, *numrange(sheet.nSelected))', 'set current column for selected rows to incremental values')
+Sheet.addCommand('zi', 'addcol-incr-step', 'n=num(input("interval step: ")); c=SettableColumn(type=type(n)); addColumn(c, cursorColIndex+1); c.setValues(rows, *numrange(nRows, step=n))', 'add column with incremental values times given step')
+Sheet.addCommand('gzi', 'setcol-incr-step', 'n=num(input("interval step: ")); cursorCol.setValues(selectedRows, *numrange(nSelected, n))', 'set current column for selected rows to incremental values times given step')
 
 globalCommand('A', 'open-new', 'vd.push(vd.newSheet(1, name="unnamed"))', 'open new blank sheet')

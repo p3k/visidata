@@ -3,6 +3,7 @@ import sys
 import inspect
 import argparse
 import importlib
+import os
 
 import visidata
 from visidata import VisiData, BaseSheet, vd, getGlobals, addGlobals
@@ -108,6 +109,7 @@ class Option:
         self.value = value
         self.helpstr = helpstr
         self.replayable = False
+        self.sheettype = BaseSheet
 
     def __str__(self):
         return str(self.value)
@@ -141,6 +143,11 @@ class OptionsObject:
         self._cache.clear()  # invalidate entire cache on any set()
         return self._opts.set(k, Option(k, v, helpstr), obj)
 
+    def is_set(self, k, obj=None):
+        d = self._opts.get(k, None)
+        if d:
+            return d.get(self._opts.objname(obj), None)
+
     def get(self, k, obj=None):
         return self._get(k, obj).value
 
@@ -173,7 +180,7 @@ class OptionsObject:
                 v = t(v)
 
             if curval != v and self._get(k, 'global').replayable:
-                if vd.cmdlog and obj != 'global':  # options set on init aren't recorded
+                if vd.cmdlog and obj != 'global' and type(obj) is not type:  # options set on init aren't recorded
                     vd.set_option(vd.cmdlog, k, v, obj)
         else:
             curval = None
@@ -221,9 +228,10 @@ options = vd.options  # legacy
 
 
 @VisiData.global_api
-def option(vd, name, default, helpstr, replay=False):
+def option(vd, name, default, helpstr, replay=False, sheettype=BaseSheet):
     opt = options.setdefault(name, default, helpstr)
     opt.replayable = replay
+    opt.sheettype=sheettype
     return opt
 
 
@@ -300,33 +308,23 @@ def addOptions(parser):
 
 
 @VisiData.api
-def parseArgs(vd, parser:argparse.ArgumentParser):
-    addOptions(parser)
-    args, remaining = parser.parse_known_args()
+def loadConfigAndPlugins(vd, args):
+    # set visidata_dir and config manually before loading config file, so visidata_dir can be set from cli or from $VD_DIR
+    options.visidata_dir = args.visidata_dir or os.getenv('VD_DIR', '') or options.visidata_dir
+    options.config = args.config or os.getenv('VD_CONFIG', '') or options.config
 
-    # add visidata_dir to path before loading config file (can only be set from cli)
-    sys.path.append(str(visidata.Path(args.visidata_dir or options.visidata_dir)))
+    sys.path.append(str(visidata.Path(options.visidata_dir)))
+    sys.path.append(str(visidata.Path(options.visidata_dir)/"plugin-deps"))
 
     # import plugins from .visidata/plugins before .visidatarc, so plugin options can be overridden
-    for modname in args.imports.split():
+    for modname in (args.imports or options.imports or '').split():
         try:
             addGlobals(importlib.import_module(modname).__dict__)
         except ModuleNotFoundError:
             continue
 
     # user customisations in config file in standard location
-    loadConfigFile(visidata.Path(args.config or options.config), getGlobals())
-
-    # add plugin options and reparse
-    addOptions(parser)
-    args, remaining = parser.parse_known_args()
-
-    # apply command-line overrides after .visidatarc
-    for optname, optval in vars(args).items():
-        if optval is not None and optname not in ['inputs', 'play', 'batch', 'output', 'diff']:
-            options[optname] = optval
-
-    return args
+    loadConfigFile(options.config, getGlobals())
 
 
-BaseSheet.addCommand('gO', 'open-config', 'fn=options.config; vd.push(TextSheet(fn, source=Path(fn)))', 'open ~/.visidatarc as Text Sheet')
+BaseSheet.addCommand('gO', 'open-config', 'vd.push(open_txt(options.config))', 'open options.config as text sheet')
